@@ -1,5 +1,5 @@
 // Package client is a small MCP client. It lists the tools of a server, hears
-// when that list changes, and calls tools.
+// when that list changes, calls tools, and reads resources.
 //
 // It talks to the server over the transports of the official Go SDK and uses
 // the SDK's protocol types. Unlike the SDK's own client, it keeps the schemas
@@ -37,6 +37,7 @@ const (
 	methodToolListChanged     = "notifications/tools/list_changed"
 	methodListTools           = "tools/list"
 	methodCallTool            = "tools/call"
+	methodReadResource        = "resources/read"
 	methodPing                = "ping"
 )
 
@@ -253,6 +254,16 @@ func (s *Session) CallTool(ctx context.Context, params *mcp.CallToolParams) (*mc
 		return nil, err
 	}
 	return readCallToolResult(raw)
+}
+
+// ReadResource reads a resource, such as one a tool returned as a resource
+// link. A resource with nothing to read answers with an error.
+func (s *Session) ReadResource(ctx context.Context, params *mcp.ReadResourceParams) (*mcp.ReadResourceResult, error) {
+	var result mcp.ReadResourceResult
+	if err := s.call(ctx, methodReadResource, params, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // Wait blocks until the connection ends. It returns nil when the session was
