@@ -153,9 +153,15 @@ func Connect(ctx context.Context, transport mcp.Transport, opts *Options) (*Sess
 	}
 	s.initializeResult = result
 
-	if s.opts.ToolListChanged != nil && announcesToolChanges(result) {
+	if s.opts.ToolListChanged != nil {
+		// A server may send a change on the stream of a request even when it
+		// did not announce that it reports changes, so the callback runs for
+		// any server. The announcement decides only whether to hold a stream
+		// open for changes.
 		s.callbackDone = make(chan struct{})
 		go s.runCallbacks()
+	}
+	if s.opts.ToolListChanged != nil && announcesToolChanges(result) {
 		switch {
 		case isStateless(result.ProtocolVersion):
 			s.changes = newSubscription(s)

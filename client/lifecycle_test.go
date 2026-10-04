@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -233,6 +234,46 @@ func TestCloseEndsACallInFlight(t *testing.T) {
 			}
 		case <-time.After(time.Minute):
 			t.Fatal("the call in flight did not return after Close")
+		}
+	})
+}
+
+// A change the server reports without having announced that it reports
+// changes is still heard, here on the stream of a tools/list answer.
+func TestAnUnannouncedChangeIsHeard(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		srv := serveHTTP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			switch req := readRPC(r); req.Method {
+			case methodDiscover:
+				writeRPCError(w, req.ID, -32601, "method not found")
+			case methodInitialize:
+				writeRPCResult(w, req.ID, `{"protocolVersion":"`+newestHandshake+`","capabilities":{"tools":{}},"serverInfo":{"name":"quiet","version":"1"}}`)
+			case methodListTools:
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"%s\"}\n\n", methodToolListChanged)
+				fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"tools\":[]}}\n\n", req.ID)
+			default:
+				w.WriteHeader(http.StatusAccepted)
+			}
+		}))
+		changed := make(chan struct{}, 1)
+		s := connect(t, srv.transport(), &Options{ToolListChanged: func() {
+			select {
+			case changed <- struct{}{}:
+			default:
+			}
+		}})
+		if _, err := allTools(s); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-changed:
+		case <-time.After(time.Minute):
+			t.Fatal("the change on the tools/list stream was not heard")
 		}
 	})
 }
