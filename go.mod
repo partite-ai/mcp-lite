@@ -1,6 +1,6 @@
 module github.com/partite-ai/mcp-lite
 
-go 1.26.5
+go 1.27.4
 
 require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
