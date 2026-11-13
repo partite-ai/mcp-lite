@@ -185,10 +185,13 @@ func (s *Session) ID() string {
 	return s.conn.SessionID()
 }
 
+// maxToolPages is how many pages of a tool list Tools reads before it stops.
+const maxToolPages = 100
+
 // Tools returns an iterator over the tools the server offers. It reads page by
 // page, from params.Cursor or from the first page when params is nil, and
-// stops early when the caller does. When a page cannot be read, it yields the
-// error once and stops.
+// stops early when the caller does. When a page cannot be read, or the list
+// goes on for more than maxToolPages pages, it yields an error once and stops.
 //
 // The InputSchema and OutputSchema of each tool are the json.RawMessage the
 // server sent, or nil when it sent none.
@@ -199,7 +202,7 @@ func (s *Session) Tools(ctx context.Context, params *mcp.ListToolsParams) iter.S
 			request = *params
 		}
 		cursorsSeen := map[string]bool{}
-		for {
+		for page := 1; ; page++ {
 			tools, nextCursor, err := s.listToolsPage(ctx, &request)
 			if err != nil {
 				yield(nil, err)
@@ -217,6 +220,11 @@ func (s *Session) Tools(ctx context.Context, params *mcp.ListToolsParams) iter.S
 			// forever.
 			if cursorsSeen[nextCursor] {
 				yield(nil, fmt.Errorf("the server sent the tools/list cursor %q twice", nextCursor))
+				return
+			}
+			// Nor would one that hands out a new cursor every time.
+			if page == maxToolPages {
+				yield(nil, fmt.Errorf("the server's tool list has more than %d pages", maxToolPages))
 				return
 			}
 			cursorsSeen[nextCursor] = true

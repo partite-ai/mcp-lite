@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -95,6 +96,38 @@ func TestToolsStopsOnARepeatedCursor(t *testing.T) {
 		}
 		if listErr == nil || tools != 2 {
 			t.Errorf("listed %d tools then %v; want 2 tools then an error", tools, listErr)
+		}
+	})
+}
+
+// A server that hands out a new cursor every time ends the listing with an
+// error rather than being read forever.
+func TestToolsStopsAfterMaxToolPages(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		server := newServer(handshakeVersions...)
+		closeServerSessions(t, server)
+		handler := sdkHandler(server, nil)
+		var pages int
+		s := connect(t, serveHTTP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				if req := readRPC(r); req.Method == methodListTools {
+					pages++
+					writeRPCResult(w, req.ID, `{"tools":[],"nextCursor":"`+strconv.Itoa(pages)+`"}`)
+					return
+				}
+			}
+			handler.ServeHTTP(w, r)
+		})).transport(), nil)
+
+		var listErr error
+		for _, err := range s.Tools(context.Background(), nil) {
+			if err != nil {
+				listErr = err
+				break
+			}
+		}
+		if listErr == nil || pages != maxToolPages {
+			t.Errorf("read %d pages then %v; want %d pages then an error", pages, listErr, maxToolPages)
 		}
 	})
 }
